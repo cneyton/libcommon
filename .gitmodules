@@ -1,3 +1,6 @@
 [submodule "dependencies/spdlog"]
 	path = dependencies/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "dependencies/GSL"]
+	path = dependencies/GSL
+	url = https://github.com/microsoft/GSL.git
