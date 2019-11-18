@@ -6,6 +6,9 @@
 #include <mutex>
 #include <condition_variable>
 
+namespace common
+{
+
 /**
  * A thread is a thread of execution in a program.
  */
@@ -74,5 +77,7 @@ private:
     std::condition_variable cond_;
     int                     run_error_ = 0;
 };
+
+} /* namespace common */
 
 #endif /* THREAD_H */

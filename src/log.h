@@ -7,6 +7,9 @@
 #define likely(x)   __builtin_expect((x), 1)
 #define unlikely(x) __builtin_expect((x), 0)
 
+namespace common
+{
+
 using Logger = std::shared_ptr<spdlog::logger>;
 
 // -------------------------------- Log macros ---------------------------------
@@ -183,4 +186,6 @@ using Logger = std::shared_ptr<spdlog::logger>;
         }                                                                                   \
     } while(0)
 
-#endif
+} /* namespace common */
+
+#endif /* LOG_H */
