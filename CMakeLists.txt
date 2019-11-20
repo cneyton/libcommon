@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.6)
+cmake_minimum_required (VERSION 3.8)
 project(libcommon)
 
 # Set the project version number.
@@ -14,4 +14,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Used for autocompletion in vim
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_subdirectory(src)
+add_subdirectory(dependencies)
+
+add_library(common INTERFACE)
+target_link_libraries(common
+    INTERFACE
+    spdlog
+    )
+target_include_directories(common INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+
+# ---
+# Tests
+# ---
+add_subdirectory(test)

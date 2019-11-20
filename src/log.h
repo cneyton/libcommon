@@ -93,6 +93,14 @@ using Logger = std::shared_ptr<spdlog::logger>;
     return return_code;                                             \
 }
 
+/******************************************************************************/
+/*                              common_die_throw                              */
+/******************************************************************************/
+#define common_die_throw(logger, expr, ...) {                       \
+    log_error(logger, __VA_ARGS__);                                 \
+    throw expr;                                                     \
+}
+
 
 /******************************************************************************/
 /*                               common_die_void                              */
@@ -100,6 +108,14 @@ using Logger = std::shared_ptr<spdlog::logger>;
 #define common_die_void(logger, ...) {                              \
     log_error(logger, __VA_ARGS__);                                 \
     return;                                                         \
+}
+
+/******************************************************************************/
+/*                             common_die_throw_void                          */
+/******************************************************************************/
+#define common_die_throw_void(logger, ...) {                        \
+    log_error(logger, __VA_ARGS__);                                 \
+    throw;                                                          \
 }
 
 
