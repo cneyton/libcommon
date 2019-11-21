@@ -108,7 +108,7 @@ public:
         chunk.reserve(chunk_size);
         for (auto i = 0; i < chunk_size; i++) {
             auto shr = queues_[idx].front();
-            chunk.push_back(std::move(*shr));
+            chunk.push_back(*shr);
             queues_[idx].pop();
         }
 
