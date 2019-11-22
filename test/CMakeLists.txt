@@ -1,1 +1,2 @@
 add_subdirectory(data_queue)
+add_subdirectory(statemachine)
