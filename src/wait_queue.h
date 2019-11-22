@@ -53,7 +53,8 @@ public:
         cond_.notify_all();
     }
 
-    size_t size() {return queue_.size();}
+    size_t size()  {return queue_.size();}
+    bool   empty() {return queue_.empty();}
 
 private:
     std::queue<T>           queue_;
