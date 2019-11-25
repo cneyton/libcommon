@@ -13,7 +13,7 @@
  * A queue that support several consumer requiring a copy of the data.
  * A shared pointer to each elt is stored into several queue. One per consumer.
  *
- * Supports poping chunks off the queue by returning a vector of elements
+ * Supports popping chunks off the queue by returning a vector of elements
  */
 namespace common
 {
@@ -40,7 +40,8 @@ public:
                 if (queue.size() < max_size_)
                     queue.push(shr);
                 else
-                    log_warn(logger_, "queue too big, discarding data...");
+                    log_warn(logger_, "queue exceeding {} elements, discarding data...",
+                             data_queue_max_size);
             }
         }
         cond_.notify_all();
@@ -55,7 +56,8 @@ public:
                 if (queue.size() < max_size_)
                     queue.push(shr);
                 else
-                    log_warn(logger_, "queue too big, discarding data...");
+                    log_warn(logger_, "queue exceeding {} elements, discarding data...",
+                             data_queue_max_size);
             }
         }
         cond_.notify_all();
