@@ -167,6 +167,17 @@ using Logger = std::shared_ptr<spdlog::logger>;
     } while(0)
 
 /******************************************************************************/
+/*                              common_die_true                               */
+/******************************************************************************/
+#define common_die_true(logger, value_to_check, return_code, ...)   \
+    do{                                                             \
+        if(unlikely((value_to_check) == false)) {                   \
+            log_error(logger, __VA_ARGS__);                         \
+            return return_code;                                     \
+        }                                                           \
+    } while(0)
+
+/******************************************************************************/
 /*                              common_die_null                               */
 /******************************************************************************/
 #define common_die_null(logger, value_to_check, return_code, ...)   \
