@@ -2,10 +2,10 @@
 #include <chrono>
 #include <string>
 
-#include "log.h"
+#include "common/log.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 
-#include "data_queue.h"
+#include "common/data_queue.h"
 
 auto console = spdlog::stdout_color_mt("console");
 

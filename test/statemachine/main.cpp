@@ -1,8 +1,8 @@
 #include <thread>
 #include <chrono>
 #include <iostream>
-#include "statemachine.h"
-#include "log.h"
+#include "common/statemachine.h"
+#include "common/log.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 
 
