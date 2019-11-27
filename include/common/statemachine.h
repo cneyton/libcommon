@@ -1,10 +1,11 @@
 #ifndef STATEMACHINE_H
 #define STATEMACHINE_H
 
-#include <mutex>
 #include <cstdint>
 #include <functional>
 #include <vector>
+#include <mutex>
+#include <condition_variable>
 #include <chrono>
 
 #include "log.h"
@@ -105,11 +106,21 @@ public:
         return 0;
     }
 
+    int wait_for(const T st, const std::chrono::milliseconds timeout)
+    {
+        std::unique_lock<std::mutex> lk(mutex_state_);
+        return  cv_state_.wait_for(lk, timeout, [&] {return get_state() == st;}) ? 0:-1;
+    }
+
     uint32_t get_nb_loop_in_current_state()
     {
         return nb_loop_in_current_state_;
     }
 
+    T get_state() const
+    {
+        return current_state_->get_id();
+    }
 
     int wakeup()
     {
@@ -144,7 +155,9 @@ public:
             if (next_state_id != current_state_->get_id() && !reinit_requested_) {
                 for (auto const& st: states_) {
                     if (st.get_id() == next_state_id) {
+                        std::unique_lock<std::mutex> lk(mutex_state_);
                         current_state_ = &st;
+                        cv_state_.notify_all();
                         break;
                     }
                 }
@@ -167,7 +180,11 @@ public:
 
 private:
     Logger      logger_;
-    std::timed_mutex  mutex_;
+
+    std::mutex              mutex_state_;
+    std::timed_mutex        mutex_;
+    std::condition_variable cv_state_;
+
     uint32_t    nb_loop_in_current_state_ = 0;
     bool        verbose_          = false;
     bool        reinit_requested_ = false;
