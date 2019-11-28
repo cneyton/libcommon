@@ -22,6 +22,7 @@ target_link_libraries(common
     INTERFACE
     spdlog
     GSL
+    nlohmann_json::nlohmann_json
     )
 
 target_include_directories(common INTERFACE

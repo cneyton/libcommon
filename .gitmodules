@@ -4,3 +4,6 @@
 [submodule "dependencies/GSL"]
 	path = dependencies/GSL
 	url = https://github.com/microsoft/GSL.git
+[submodule "dependencies/json"]
+	path = dependencies/json
+	url = https://github.com/nlohmann/json.git
