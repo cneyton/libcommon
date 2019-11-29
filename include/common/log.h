@@ -160,10 +160,22 @@ using Logger = std::shared_ptr<spdlog::logger>;
 #define common_die_zero_goto(logger, value_to_check, value_to_set, return_value, goto_flag, ...)\
     do{                                                                                         \
         if(unlikely(value_to_check < 0)) {                                                      \
-            log_error(__VA_ARGS__);                                                             \
+            log_error(logger, __VA_ARGS__);                                                     \
             value_to_set = return_value;                                                        \
             goto goto_flag;                                                                     \
         }                                                                                       \
+    } while(0)
+
+/******************************************************************************/
+/*                           common_die_zero_flag                             */
+/******************************************************************************/
+#define common_die_zero_flag(logger, value_to_check, return_code, flag, ...)      \
+    do{                                                                           \
+        if(unlikely(value_to_check < 0)) {                                        \
+            log_error(logger, __VA_ARGS__);                                       \
+            flag = true;                                                          \
+            return return_code;                                                   \
+        }                                                                         \
     } while(0)
 
 /******************************************************************************/
