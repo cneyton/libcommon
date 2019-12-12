@@ -14,6 +14,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Used for autocompletion in vim
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Allow static library to be included in another lib (used for python wrapping)
+SET(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 add_subdirectory(dependencies)
 
 add_library(common INTERFACE)
