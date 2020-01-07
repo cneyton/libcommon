@@ -261,6 +261,11 @@ public:
         return &us_queue_;
     }
 
+    int flush_all()
+    {
+        return 0;
+    }
+
 private:
     Queue<us::Frame<int16_t>> us_queue_;
     Logger logger_;
