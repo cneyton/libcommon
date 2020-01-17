@@ -23,7 +23,7 @@ add_library(common INTERFACE)
 
 target_link_libraries(common
     INTERFACE
-    spdlog
+    spdlog_header_only
     GSL
     nlohmann_json::nlohmann_json
     )
@@ -35,4 +35,16 @@ target_include_directories(common INTERFACE
 # ---
 # Tests
 # ---
-#add_subdirectory(test)
+include(CTest)
+
+if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    set(COMMON_MASTER_PROJECT ON)
+else()
+    set(SPDLOG_MASTER_PROJECT OFF)
+endif()
+
+if (BUILD_TESTING AND COMMON_MASTER_PROJECT)
+    enable_testing()
+    add_subdirectory(test)
+endif()
+

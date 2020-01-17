@@ -1,6 +1,7 @@
 #ifndef DATA_H
 #define DATA_H
 
+#include <vector>
 #include <map>
 #include <queue>
 #include <memory>
@@ -23,78 +24,50 @@ namespace common
 namespace data
 {
 
-constexpr size_t queue_max_size = 10000;
+constexpr size_t queue_max_size = 1000;
 
 using ConsumerKey = int;
+using ByteBuffer  = std::vector<uint8_t>;
+using View        = gsl::span<const uint8_t>;
+using ShrdQueue   = std::queue<std::shared_ptr<ByteBuffer>>;
 
-template<typename T>
 class Queue
 {
 public:
-    Queue(Logger logger): logger_(logger),
-        q_map(std::map<ConsumerKey, std::queue<std::shared_ptr<T>>>()) {}
-    Queue(Logger logger, size_t size): logger_(logger), max_size_(size),
-        q_map(std::map<ConsumerKey, std::queue<std::shared_ptr<T>>>()) {}
+    Queue(Logger logger, size_t elt_size): logger_(logger), elt_size_(elt_size),
+        q_map_(std::map<ConsumerKey, ShrdQueue>()) {}
+    Queue(Logger logger, size_t elt_size, size_t max_size): logger_(logger), elt_size_(elt_size),
+        max_size_(max_size), q_map_(std::map<ConsumerKey, ShrdQueue>()) {}
 
-    void push(const T& elt)
+    virtual ~Queue() {};
+
+    int push(const gsl::span<const uint8_t> span)
     {
+        if (static_cast<size_t>(span.size()) != elt_size_) {
+            common_die(logger_, -1, "invalid size");
+        }
+
         {
             std::unique_lock<std::mutex> lk(mutex_);
-            auto shr = std::make_shared<T>(elt);
-            for (auto& pair: q_map) {
+            ByteBuffer buf(span.cbegin(), span.cend());
+            auto shr = std::make_shared<ByteBuffer>(buf);
+            for (auto& pair: q_map_) {
                 if (pair.second.size() < max_size_)
                     pair.second.push(shr);
                 else
-                    log_warn(logger_, "queue exceeding {} elements, discarding data...",
-                             queue_max_size);
+                    log_warn(logger_, "queue exceeding {} elements, discarding data...", max_size_);
             }
         }
         cond_.notify_all();
+        return 0;
     }
 
-    void push(T&& elt)
-    {
-        {
-            std::unique_lock<std::mutex> lk(mutex_);
-            auto shr = std::make_shared<T>(std::move(elt));
-            for (auto& pair: q_map) {
-                if (pair.second.size() < max_size_)
-                    pair.second.push(shr);
-                else
-                    log_warn(logger_, "queue exceeding {} elements, discarding data...",
-                             queue_max_size);
-            }
-        }
-        cond_.notify_all();
-    }
-
-    //T pop(ConsumerKey& key)
-    //{
-        //std::unique_lock<std::mutex> lk(mutex_);
-
-        //auto found = q_map.find(key);
-
-        //if (found != q_map.end())
-
-        //int idx = static_cast<int>(key);
-        //if (idx < 0 || idx >= N)
-            //common_die_throw_void(logger_, "invalid key");
-
-        //cond_.wait(lk, [&] {return !q_map[idx].empty();});
-
-        //auto shr = q_map[idx].front();
-        //q_map[idx].pop();
-
-        //T elt = T(*shr);
-        //return elt;
-    //}
-
-    int pop(ConsumerKey& key, T& elt)
+    int pop(ConsumerKey& key, ByteBuffer& buffer)
     {
         std::unique_lock<std::mutex> lk(mutex_);
 
-        auto search = q_map.find(key);
-        if (search == q_map.end())
+        auto search = q_map_.find(key);
+        if (search == q_map_.end())
             common_die(logger_, -1, "invalid key");
 
         cond_.wait(lk, [&] {return !search->second.empty();});
@@ -102,22 +75,22 @@ public:
         auto shr = search->second.front();
         search->second.pop();
 
-        elt = T(*shr);
+        buffer = ByteBuffer(*shr);
         return 0;
     }
 
-    int pop_chunk(ConsumerKey key, size_t chunk_size, std::vector<T>& chunk)
+    int pop_chunk(ConsumerKey& key, size_t chunk_size, std::vector<ByteBuffer>& chunk)
     {
         std::unique_lock<std::mutex> lk(mutex_);
 
-        auto search = q_map.find(key);
-        if (search == q_map.end())
+        auto search = q_map_.find(key);
+        if (search == q_map_.end())
             common_die(logger_, -1, "invalid key");
 
         cond_.wait(lk, [&] {return !(search->second.size() < chunk_size);});
 
         chunk.reserve(chunk_size);
-        for (auto i = 0; i < chunk_size; i++) {
+        for (size_t i = 0; i < chunk_size; i++) {
             auto shr = search->second.front();
             chunk.push_back(*shr);
             search->second.pop();
@@ -126,149 +99,161 @@ public:
         return 0;
     }
 
-    ConsumerKey subscribe()
+    int subscribe(ConsumerKey key)
     {
         std::unique_lock<std::mutex> lk(mutex_);
 
-        ConsumerKey key = static_cast<ConsumerKey>(nb_subsriber_);
-        nb_subsriber_++;
+        auto search = q_map_.find(key);
+        if (search != q_map_.end())
+            common_die(logger_, -1, "key already in use");
 
-        q_map[key] = std::queue<std::shared_ptr<T>>();
-        return key;
+        q_map_[key] = ShrdQueue();
+        return 0;
     }
 
 private:
-    std::map<ConsumerKey, std::queue<std::shared_ptr<T>>> q_map;
-    std::condition_variable  cond_;
-    std::mutex               mutex_;
-    size_t                   nb_subsriber_ = 0;
-    size_t                   max_size_     = queue_max_size;
-
     Logger logger_;
+    size_t elt_size_;
+    size_t max_size_     = queue_max_size;
+
+    std::map<ConsumerKey, ShrdQueue> q_map_;
+    std::condition_variable          cond_;
+    std::mutex                       mutex_;
 };
 
-template <typename T>
+enum class type {
+    us,
+    toco,
+    oxy
+};
+
+class Handler
+{
+public:
+    Handler(Logger logger): logger_(logger), us_queue_(std::make_unique<Queue>(logger, 0)) {}
+
+    ConsumerKey add_consumer()
+    {
+        nb_consumer_++;
+        ConsumerKey key = static_cast<ConsumerKey>(nb_consumer_);
+        keys_.push_back(key);
+        return key;
+    }
+
+    int reinit_queue(type t, size_t elt_size, size_t max_size)
+    {
+        switch (t) {
+        case type::us:
+            us_queue_ = std::make_unique<Queue>(logger_, elt_size, max_size);
+            // resubsribe the consumers
+            for (auto& key: keys_) {
+                us_queue_->subscribe(key);
+            }
+            break;
+        default:
+            common_die(logger_, -2, "invalid type, you should not be here");
+        }
+        return 0;
+    }
+
+    int push(type t, const View& v)
+    {
+        int ret;
+        switch (t) {
+        case type::us:
+            ret = us_queue_->push(v);
+            common_die_zero(logger_, ret, -1, "failed to push data to us queue");
+            break;
+        default:
+            common_die(logger_, -2, "invalid type, you should not be here");
+        }
+        return 0;
+    }
+
+    int pop(type t, ConsumerKey key, ByteBuffer& buf)
+    {
+        int ret;
+        switch (t) {
+        case type::us:
+            ret = us_queue_->pop(key, buf);
+            common_die_zero(logger_, ret, -1, "failed to pop data from us queue");
+            break;
+        default:
+            common_die(logger_, -2, "invalid type, you should not be here");
+        }
+        return 0;
+    }
+
+    int pop_chunk(type t, ConsumerKey& key, size_t chunk_size, std::vector<ByteBuffer>& chunk)
+    {
+        int ret;
+        switch (t) {
+        case type::us:
+            ret = us_queue_->pop_chunk(key, chunk_size, chunk);
+            common_die_zero(logger_, ret, -1, "failed to pop chunk from us queue");
+            break;
+        default:
+            common_die(logger_, -2, "invalid type, you should not be here");
+        }
+        return 0;
+    }
+
+
+private:
+    Logger   logger_;
+    uint16_t nb_consumer_ = 0;
+    std::vector<ConsumerKey> keys_;
+
+    // TODO: maybe change all the queues with a vector or map
+    std::unique_ptr<Queue> us_queue_;
+};
+
+class Producer
+{
+public:
+    Producer(Logger logger, Handler * h): logger_(logger), h_(h) {}
+
+    int push(type t, const View& v)
+    {
+        int ret;
+        ret = h_->push(t, v);
+        common_die_zero(logger_, ret, -1, "producer failed to push buffer");
+        return 0;
+    }
+
+private:
+    Logger  logger_;
+    Handler * h_;
+};
+
 class Consumer
 {
 public:
-    Consumer(Logger logger, Queue<T> * queue): logger_(logger), queue_(queue)
+    Consumer(Logger logger, Handler * h): logger_(logger), h_(h)
     {
-        key_ = queue->subscribe();
+        key_ = h_->add_consumer();
     }
 
-    int pop(T& elt)
+    int pop(type t, ByteBuffer& buf)
     {
         int ret;
-        ret = queue_->pop(key_, elt);
+        ret = h_->pop(t, key_, buf);
         common_die_zero(logger_, ret, -1, "consumer {} failed to pop elt", key_);
         return 0;
     }
 
-    int pop_chunk(size_t chunk_size, std::vector<T>& chunk)
+    int pop_chunk(type t, size_t chunk_size, std::vector<ByteBuffer>& chunk)
     {
         int ret;
-        ret = queue_->pop_chunk(key_, chunk_size, chunk);
+        ret = h_->pop_chunk(t, key_, chunk_size, chunk);
         common_die_zero(logger_, ret, -1, "consumer {} failed to pop chunk", key_);
         return 0;
     }
 
 private:
-    ConsumerKey key_;
-    Queue<T>  * queue_;
-    Logger      logger_;
-};
-
-template <typename T>
-class Producer
-{
-public:
-    Producer(Logger logger, Queue<T> * queue): logger_(logger), queue_(queue)
-    {
-    }
-
-    void push(const T& elt)
-    {
-        queue_->push(elt);
-    }
-
-    void push(T&& elt)
-    {
-        queue_->push(std::move(elt));
-    }
-
-private:
-    Queue<T> * queue_;
-    Logger     logger_;
-};
-
-namespace us
-{
-
-template<typename T>
-class Sample
-{
-public:
-    Sample() {}
-    Sample(T i, T q): i_(i), q_(q) {}
-//private:
-    T i_;
-    T q_;
-};
-
-template<typename T>
-class Frame
-{
-public:
-    Frame() {}
-    Frame(gsl::span<const uint8_t> span)
-    {
-        if (span.size() % sizeof(T) != 0)
-            return;
-
-        samples_.reserve(span.size()/sizeof(T));
-        auto it = span.cbegin();
-        while (it != span.cend()) {
-            T i, q;
-            std::copy(it, it + sizeof(T), (uint8_t*)&i);
-            it += sizeof(T);
-            std::copy(it, it + sizeof(T), (uint8_t*)&q);
-            it += sizeof(T);
-            samples_.emplace_back(i, q);
-        }
-    }
-
-    std::vector<Sample<T>>& get_samples()
-    {
-        return samples_;
-    }
-
-private:
-    std::vector<Sample<T>> samples_;
-};
-
-} /* namespace us */
-
-//TODO: template for us_type, toco_type, etc
-class Handler
-{
-public:
-    Handler(Logger logger): logger_(logger), us_queue_(logger)
-    {
-    }
-
-    Queue<us::Frame<int16_t>> * get_us_queue()
-    {
-        return &us_queue_;
-    }
-
-    int flush_all()
-    {
-        return 0;
-    }
-
-private:
-    Queue<us::Frame<int16_t>> us_queue_;
-    Logger logger_;
+    Logger        logger_;
+    Handler     * h_;
+    ConsumerKey   key_;
 };
 
 } /* namespace data */
