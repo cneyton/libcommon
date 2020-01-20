@@ -5,6 +5,7 @@
 #include "common/log.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 
+auto console = spdlog::stdout_color_mt("console");
 
 class Test
 {
@@ -17,31 +18,34 @@ private:
 
     int handler_state_disconnected_()
     {
-        log_info(spdlog::get("console"), "disconnected");
-        connection_opened_ = false;
-        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-        return common::statemachine::goto_next_state;
+        log_info(console, "disconnected");
+        disconnected_ = false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+        return 0;
     }
 
     int handler_state_connecting_()
     {
-        log_info(spdlog::get("console"), "connecting");
-        disconnected_ = false;
-        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+        log_info(console, "connecting");
+        connection_opened_ = false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         return 0;
     }
 
     int handler_state_connected_()
     {
-        log_info(spdlog::get("console"), "connected");
-        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+        log_info(console, "connected");
+        connection_established_ = false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         return 0;
     }
 
     int check_connection_opened_()
     {
-        if (connection_opened_)
+        if (connection_opened_) {
+            log_info(console, "check ok");
             return 1;
+        }
         return 0;
     }
 
@@ -65,13 +69,13 @@ private:
              {std::bind(&Test::check_connection_opened_, this),    states::connecting}}
         },
         {"connecting", states::connecting,
-            {{std::bind(&Test::handler_state_connecting_, this),   states::connecting,},
+            {{std::bind(&Test::handler_state_connecting_, this),   states::connecting},
              {std::bind(&Test::check_disconnected_, this),         states::disconnected},
-             {std::bind(&Test::check_connected_, this),            states::connected,}}
+             {std::bind(&Test::check_connected_, this),            states::connected}}
         },
         {"connected", states::connected,
-            {{std::bind(&Test::handler_state_connected_, this),    states::connected,},
-             {std::bind(&Test::check_disconnected_, this),         states::disconnected,}}
+            {{std::bind(&Test::handler_state_connected_, this),    states::connected},
+             {std::bind(&Test::check_disconnected_, this),         states::disconnected}}
         }
     };
 
@@ -79,12 +83,12 @@ private:
 
     bool connection_opened_      = false;
     bool connection_established_ = false;
-    bool disconnected_           = true;
+    bool disconnected_           = false;
 
     common::Logger logger_;
 
 public:
-    Test(common::Logger logger) : statemachine_("sm_test", states_, states::disconnected, logger)
+    Test(common::Logger logger) : statemachine_(logger, "sm_test", states_, states::disconnected)
     {
         statemachine_.display_trace();
     }
@@ -93,6 +97,7 @@ public:
         int ret;
         while (1) {
             ret = statemachine_.wakeup();
+            common_die_zero_void(console, ret, "statemachine error");
         }
     }
     int open_connection()
@@ -136,7 +141,7 @@ int host_cli(Test& test)
         try {
             choice = std::stoi(usr_in);
         } catch (...) {
-            log_error(spdlog::get("console"), "error : {}", usr_in);
+            log_error(console, "error : {}", usr_in);
             choice = 254;
         }
 
@@ -158,6 +163,7 @@ int host_cli(Test& test)
 
             case 3:
                 test.reinit_statemachine();
+                break;
 
             case 255:
                 exit = true;
@@ -174,7 +180,6 @@ int host_cli(Test& test)
 
 int main()
 {
-    auto console = spdlog::stdout_color_mt("console");
     console->set_level(spdlog::level::debug);
     console->set_pattern("[%T:%e][%^%l%$] %s:%#:%! | %v");
 
@@ -182,7 +187,9 @@ int main()
 
     std::thread sm_thread(&Test::run, &test);
 
-    int ret = host_cli(test);
+    int ret;
+    ret = host_cli(test);
+    common_die_zero(console, ret, -1, "cli error");
 
     sm_thread.join();
 

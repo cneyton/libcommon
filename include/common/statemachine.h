@@ -63,9 +63,9 @@ template<typename T>
 class Statemachine
 {
 public:
-    Statemachine(const std::string name, const StatesList<T>& states,
-                 const T initial_state_id, Logger logger)
-        : name_(name), states_(states), nb_loop_in_current_state_(0), logger_(logger)
+    Statemachine(Logger logger, const std::string name, const StatesList<T>& states,
+                 const T initial_state_id)
+        : logger_(logger), name_(name), states_(states)
     {
         for (auto const& st: states_) {
             if (st.get_id() == initial_state_id) {

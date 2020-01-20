@@ -1,2 +1,2 @@
 add_subdirectory(data)
-#add_subdirectory(statemachine)
+add_subdirectory(statemachine)
