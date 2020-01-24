@@ -44,7 +44,7 @@ public:
     int push(const gsl::span<const uint8_t> span)
     {
         if (static_cast<size_t>(span.size()) != elt_size_) {
-            common_die(logger_, -1, "invalid size");
+            common_die(logger_, -1, "invalid size : {} != {}", span.size(), elt_size_);
         }
 
         {
