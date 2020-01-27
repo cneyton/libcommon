@@ -3,16 +3,39 @@
 
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
 #include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 
 #define likely(x)   __builtin_expect((x), 1)
 #define unlikely(x) __builtin_expect((x), 0)
 
+#include <string>
 #include <memory>
 
 namespace common
 {
 
 using Logger = std::shared_ptr<spdlog::logger>;
+
+class Log
+{
+public:
+    Log(const std::string& name) : logger_(spdlog::stdout_color_mt(name))
+    {
+        logger_->set_pattern("[%T:%e][%^%l%$] %s:%#:%! | %v");
+        logger_->set_level(spdlog::level::info);
+    };
+
+    virtual ~Log() {};
+
+    void set_log_level(spdlog::level::level_enum level)
+    {
+        logger_->set_level(level);
+    };
+
+protected:
+    Logger logger_;
+};
+
 
 // -------------------------------- Log macros ---------------------------------
 // log_trace(logger, const char * format, ...)
