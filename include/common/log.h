@@ -19,7 +19,9 @@ using Logger = std::shared_ptr<spdlog::logger>;
 class Log
 {
 public:
-    Log(const std::string& name) : logger_(spdlog::stdout_color_mt(name))
+    Log(common::Logger logger): logger_(logger) {};
+
+    Log(const std::string& name): logger_(spdlog::stdout_color_mt(name))
     {
         logger_->set_pattern("[%T:%e][%^%l%$] %s:%#:%! | %v");
         logger_->set_level(spdlog::level::info);
