@@ -127,10 +127,10 @@ enum class type {
     oxy
 };
 
-class Handler
+class Handler: public Log
 {
 public:
-    Handler(Logger logger): logger_(logger), us_queue_(std::make_unique<Queue>(logger, 0)) {}
+    Handler(Logger logger): Log(logger), us_queue_(std::make_unique<Queue>(logger, 0)) {}
 
     ConsumerKey add_consumer()
     {
@@ -200,7 +200,6 @@ public:
 
 
 private:
-    Logger   logger_;
     uint16_t nb_consumer_ = 0;
     std::vector<ConsumerKey> keys_;
 
@@ -208,10 +207,10 @@ private:
     std::unique_ptr<Queue> us_queue_;
 };
 
-class Producer
+class Producer: virtual public Log
 {
 public:
-    Producer(Logger logger, Handler * h): logger_(logger), h_(h) {}
+    Producer(Logger logger, Handler * h): Log(logger), h_(h) {}
 
     int push(type t, const View& v)
     {
@@ -222,14 +221,13 @@ public:
     }
 
 private:
-    Logger  logger_;
     Handler * h_;
 };
 
-class Consumer
+class Consumer: virtual public Log
 {
 public:
-    Consumer(Logger logger, Handler * h): logger_(logger), h_(h)
+    Consumer(Logger logger, Handler * h): Log(logger), h_(h)
     {
         key_ = h_->add_consumer();
     }
@@ -251,7 +249,6 @@ public:
     }
 
 private:
-    Logger        logger_;
     Handler     * h_;
     ConsumerKey   key_;
 };
