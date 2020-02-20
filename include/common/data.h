@@ -164,6 +164,14 @@ public:
         return 0;
     }
 
+    /*
+     * Callback called when data is pushed.
+     * Should be redefined in the application.
+     * ex: this cb can be used to trigger the run of the pipeline by setting all the filters to ready
+     * NB: in this case wait should not be done in pop
+     */
+    virtual int data_pushed() {return 0;}
+
     int push(type t, const View& v)
     {
         int ret;
@@ -179,6 +187,8 @@ public:
         default:
             common_die(logger_, -2, "invalid type, you should not be here");
         }
+        ret = data_pushed();
+        common_die_zero(logger_, ret, -3, "cb failed");
         return 0;
     }
 
