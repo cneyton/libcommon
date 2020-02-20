@@ -130,7 +130,8 @@ enum class type {
 class Handler: public Log
 {
 public:
-    Handler(Logger logger): Log(logger), us_queue_(std::make_unique<Queue>(logger, 0)) {}
+    Handler(Logger logger): Log(logger), us_queue_(std::make_unique<Queue>(logger, 0)),
+        oxy_queue_(std::make_unique<Queue>(logger, 0)) {}
 
     ConsumerKey add_consumer()
     {
@@ -150,6 +151,13 @@ public:
                 us_queue_->subscribe(key);
             }
             break;
+        case type::oxy:
+            oxy_queue_ = std::make_unique<Queue>(logger_, elt_size, max_size);
+            // resubsribe the consumers
+            for (auto& key: keys_) {
+                oxy_queue_->subscribe(key);
+            }
+            break;
         default:
             common_die(logger_, -2, "invalid type, you should not be here");
         }
@@ -163,6 +171,10 @@ public:
         case type::us:
             ret = us_queue_->push(v);
             common_die_zero(logger_, ret, -1, "failed to push data to us queue");
+            break;
+        case type::oxy:
+            ret = oxy_queue_->push(v);
+            common_die_zero(logger_, ret, -1, "failed to push data to oxy queue");
             break;
         default:
             common_die(logger_, -2, "invalid type, you should not be here");
@@ -178,8 +190,12 @@ public:
             ret = us_queue_->pop(key, buf);
             common_die_zero(logger_, ret, -1, "failed to pop data from us queue");
             break;
+        case type::oxy:
+            ret = oxy_queue_->pop(key, buf);
+            common_die_zero(logger_, ret, -2, "failed to pop data from oxy queue");
+            break;
         default:
-            common_die(logger_, -2, "invalid type, you should not be here");
+            common_die(logger_, -3, "invalid type, you should not be here");
         }
         return 0;
     }
@@ -192,8 +208,12 @@ public:
             ret = us_queue_->pop_chunk(key, chunk_size, chunk);
             common_die_zero(logger_, ret, -1, "failed to pop chunk from us queue");
             break;
+        case type::oxy:
+            ret = oxy_queue_->pop_chunk(key, chunk_size, chunk);
+            common_die_zero(logger_, ret, -2, "failed to pop chunk from oxy queue");
+            break;
         default:
-            common_die(logger_, -2, "invalid type, you should not be here");
+            common_die(logger_, -3, "invalid type, you should not be here");
         }
         return 0;
     }
@@ -205,6 +225,7 @@ private:
 
     // TODO: maybe change all the queues with a vector or map
     std::unique_ptr<Queue> us_queue_;
+    std::unique_ptr<Queue> oxy_queue_;
 };
 
 class Producer: virtual public Log
