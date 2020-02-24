@@ -6,7 +6,6 @@
 #include <queue>
 #include <memory>
 #include <mutex>
-#include <condition_variable>
 
 #include <gsl/gsl>
 
@@ -47,18 +46,15 @@ public:
             common_die(logger_, -1, "invalid size : {} != {}", span.size(), elt_size_);
         }
 
-        {
-            std::unique_lock<std::mutex> lk(mutex_);
-            ByteBuffer buf(span.cbegin(), span.cend());
-            auto shr = std::make_shared<ByteBuffer>(buf);
-            for (auto& pair: q_map_) {
-                if (pair.second.size() < max_size_)
-                    pair.second.push(shr);
-                else
-                    log_warn(logger_, "queue exceeding {} elements, discarding data...", max_size_);
-            }
+        std::unique_lock<std::mutex> lk(mutex_);
+        ByteBuffer buf(span.cbegin(), span.cend());
+        auto shr = std::make_shared<ByteBuffer>(buf);
+        for (auto& pair: q_map_) {
+            if (pair.second.size() < max_size_)
+                pair.second.push(shr);
+            else
+                log_warn(logger_, "queue exceeding {} elements, discarding data...", max_size_);
         }
-        cond_.notify_all();
         return 0;
     }
 
@@ -70,13 +66,14 @@ public:
         if (search == q_map_.end())
             common_die(logger_, -1, "invalid key");
 
-        cond_.wait(lk, [&] {return !search->second.empty();});
+        if (search->second.empty())
+            return 0;
 
         auto shr = search->second.front();
         search->second.pop();
 
         buffer = ByteBuffer(*shr);
-        return 0;
+        return 1;
     }
 
     int pop_chunk(ConsumerKey& key, size_t chunk_size, std::vector<ByteBuffer>& chunk)
@@ -87,7 +84,8 @@ public:
         if (search == q_map_.end())
             common_die(logger_, -1, "invalid key");
 
-        cond_.wait(lk, [&] {return !(search->second.size() < chunk_size);});
+        if (search->second.size() < chunk_size)
+            return 0;
 
         chunk.reserve(chunk_size);
         for (size_t i = 0; i < chunk_size; i++) {
@@ -96,7 +94,7 @@ public:
             search->second.pop();
         }
 
-        return 0;
+        return 1;
     }
 
     int subscribe(ConsumerKey key)
@@ -117,7 +115,6 @@ private:
     size_t max_size_     = queue_max_size;
 
     std::map<ConsumerKey, ShrdQueue> q_map_;
-    std::condition_variable          cond_;
     std::mutex                       mutex_;
 };
 
@@ -207,7 +204,7 @@ public:
         default:
             common_die(logger_, -3, "invalid type, you should not be here");
         }
-        return 0;
+        return ret;
     }
 
     int pop_chunk(type t, ConsumerKey& key, size_t chunk_size, std::vector<ByteBuffer>& chunk)
@@ -225,7 +222,7 @@ public:
         default:
             common_die(logger_, -3, "invalid type, you should not be here");
         }
-        return 0;
+        return ret;
     }
 
 
@@ -268,7 +265,7 @@ public:
         int ret;
         ret = h_->pop(t, key_, buf);
         common_die_zero(logger_, ret, -1, "consumer {} failed to pop elt", key_);
-        return 0;
+        return ret;
     }
 
     int pop_chunk(type t, size_t chunk_size, std::vector<ByteBuffer>& chunk)
@@ -276,7 +273,7 @@ public:
         int ret;
         ret = h_->pop_chunk(t, key_, chunk_size, chunk);
         common_die_zero(logger_, ret, -1, "consumer {} failed to pop chunk", key_);
-        return 0;
+        return ret;
     }
 
 private:
