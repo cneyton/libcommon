@@ -240,6 +240,8 @@ class Producer: virtual public Log
 public:
     Producer(Logger logger, Handler * h): Log(logger), h_(h) {}
 
+    Handler * get_handler() const {return h_;}
+
     int push(type t, const View& v)
     {
         int ret;
