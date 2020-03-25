@@ -164,10 +164,16 @@ public:
     /*
      * Callback called when data is pushed.
      * Should be redefined in the application.
-     * ex: this cb can be used to trigger the run of the pipeline by setting all the filters to ready
-     * NB: in this case wait should not be done in pop
+     * ex: this cb can be used to trigger the pipeline by setting all the filters to ready
      */
     virtual int data_pushed() {return 0;}
+
+    /*
+     * Callback called when eof is reached.
+     * Should be redefined in the application.
+     * ex: this cb can be used to stop the pipeline
+     */
+    virtual int eof()         {return 0;}
 
     int push(type t, const View& v)
     {
@@ -247,6 +253,12 @@ public:
         int ret;
         ret = h_->push(t, v);
         common_die_zero(logger_, ret, -1, "producer failed to push buffer");
+        return 0;
+    }
+
+    int eof()
+    {
+        h_->eof();
         return 0;
     }
 
