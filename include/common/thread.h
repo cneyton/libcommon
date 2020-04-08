@@ -78,6 +78,22 @@ private:
     int                     run_error_ = 0;
 };
 
+/**
+ * Thread class that runs into a parent scope and should keep a reference to it.
+ *
+ * @param P The parent class
+ */
+template<typename P>
+class BaseThread: public Thread
+{
+public:
+    BaseThread(P * parent): parent_(parent) {}
+    virtual ~BaseThread() {}
+
+protected:
+    P * parent_;
+};
+
 } /* namespace common */
 
 #endif /* THREAD_H */
