@@ -7,3 +7,6 @@
 [submodule "dependencies/json"]
 	path = dependencies/json
 	url = https://github.com/nlohmann/json.git
+[submodule "dependencies/readerwriterqueue"]
+	path = dependencies/readerwriterqueue
+	url = https://github.com/cameron314/readerwriterqueue.git
