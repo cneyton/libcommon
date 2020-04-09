@@ -6,8 +6,8 @@
  * units (seconds, milliseconds, etc).  You call run_once() / run_loop() using
  * the same time units that you use to specify callbacks.
  *
- * @author Tudor Bosman (tudorb@fb.com)
- * https://github.com/facebook/folly
+ * Adapted from    : https://github.com/facebook/folly
+ * Original author : Tudor Bosman (tudorb@fb.com)
  */
 
 #pragma once
@@ -16,6 +16,7 @@
 #include <functional>
 #include <algorithm>
 #include <vector>
+#include <mutex>
 
 #include <boost/multi_index/indexed_by.hpp>
 #include <boost/multi_index/member.hpp>
@@ -39,6 +40,7 @@ public:
      */
     Id add(int64_t now, int64_t delay, Callback callback)
     {
+        std::unique_lock<std::mutex> lk(mutex_run_);
         Id id = nextId_++;
         timeouts_.insert({id, now + delay, -1, std::move(callback)});
         return id;
@@ -54,6 +56,7 @@ public:
      */
     Id add_repeating(int64_t now, int64_t interval, Callback callback)
     {
+        std::unique_lock<std::mutex> lk(mutex_run_);
         Id id = nextId_++;
         timeouts_.insert({id, now + interval, interval, std::move(callback)});
         return id;
@@ -65,6 +68,7 @@ public:
      */
     bool erase(Id id)
     {
+        std::unique_lock<std::mutex> lk(mutex_run_);
         return timeouts_.get<BY_ID>().erase(id);
     }
 
@@ -127,11 +131,13 @@ private:
         BY_EXPIRATION = 1,
     };
 
-    Set timeouts_;
-    Id nextId_;
+    Set        timeouts_;
+    Id         nextId_;
+    std::mutex mutex_run_;
 
     int64_t run_internal(int64_t now, bool onceOnly)
     {
+        std::unique_lock<std::mutex> lk(mutex_run_);
         auto& byExpiration = timeouts_.get<BY_EXPIRATION>();
         int64_t nextExp;
         do {
