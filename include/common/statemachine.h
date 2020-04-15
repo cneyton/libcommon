@@ -7,6 +7,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <chrono>
+#include <limits>
 
 #include "log.h"
 
@@ -129,7 +130,7 @@ public:
 
         nb_loop_in_current_state_++;
         /* hack to avoid overload on long states */
-        if (nb_loop_in_current_state_ == 0xFFFFFFFF)
+        if (nb_loop_in_current_state_ == std::numeric_limits<uint64_t>::max())
             nb_loop_in_current_state_ = 100;
 
         int ret;
@@ -173,8 +174,6 @@ public:
             reinit_requested_ = false;
         }
 
-
-
         return 0;
     }
 
@@ -185,7 +184,7 @@ private:
     std::timed_mutex        mutex_;
     std::condition_variable cv_state_;
 
-    uint32_t    nb_loop_in_current_state_ = 0;
+    uint64_t    nb_loop_in_current_state_ = 0;
     bool        verbose_          = false;
     bool        reinit_requested_ = false;
     bool        enabled_          = true;
