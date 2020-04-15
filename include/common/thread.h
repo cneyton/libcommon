@@ -14,8 +14,8 @@ namespace common
  */
 class Thread
 {
-
 public:
+    Thread(): run_(false) {}
     virtual ~Thread() {}
 
     /**
@@ -28,22 +28,16 @@ public:
      * It is never legal to start a thread more than once. In particular, a
      * thread may not be restarted once it has completed execution.
      *
-     * @param wait_start set to true if the thread need to wait before executing
+     * @param wait_start set to true to block the caller until a notification is sent
      */
-    virtual void start_thread(bool wait_start)
+    virtual void start(bool wait_start)
     {
+        run_ = true;
         thread_ = std::thread([this] {run();});
         if (wait_start) {
             std::unique_lock<std::mutex> lock(mutex_);
             cond_.wait(lock);
         }
-    }
-
-    void notify_thread_running(int error)
-    {
-        std::unique_lock<std::mutex> lock(mutex_);
-        run_error_ = error;
-        cond_.notify_all();
     }
 
     /**
@@ -56,23 +50,29 @@ public:
      */
     virtual void run() = 0;
 
-    int get_thread_error()     {return run_error_;}
+    virtual void stop()       {run_ = false;}
 
-    virtual void join()        {thread_.join();}
+    int get_thread_error()    {return run_error_;}
 
-    virtual bool joinable()    {return thread_.joinable();}
+    virtual void join()       {thread_.join();}
 
-    virtual void detach()      {thread_.detach();}
+    virtual bool joinable()   {return thread_.joinable();}
 
-    virtual void cancel()      {canceled_ = true;}
+    virtual void detach()     {thread_.detach();}
 
-    virtual bool is_canceled() {return canceled_;}
+    virtual bool is_running() const {return run_;}
 
-    void reset_thread()        {canceled_ = false;}
+protected:
+    void notify_running(int error)
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        run_error_ = error;
+        cond_.notify_all();
+    }
 
 private:
     std::thread             thread_;
-    std::atomic_bool        canceled_ = ATOMIC_VAR_INIT(false);
+    std::atomic_bool        run_;
     std::mutex              mutex_;
     std::condition_variable cond_;
     int                     run_error_ = 0;
