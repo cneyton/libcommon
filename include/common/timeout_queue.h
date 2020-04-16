@@ -73,6 +73,15 @@ public:
     }
 
     /**
+     * Clear the queue.
+     */
+    void clear()
+    {
+        std::unique_lock<std::mutex> lk(mutex_run_);
+        timeouts_.clear();
+    }
+
+    /**
      * Process all events that are due at times <= "now" by calling their
      * callbacks.
      *
