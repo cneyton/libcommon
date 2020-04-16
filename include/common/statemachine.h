@@ -113,6 +113,12 @@ public:
         return  cv_state_.wait_for(lk, timeout, [&] {return get_state() == st;}) ? 0:-1;
     }
 
+    void wait(const T st)
+    {
+        std::unique_lock<std::mutex> lk(mutex_state_);
+        cv_state_.wait(lk, [&] {return get_state() == st;});
+    }
+
     uint32_t get_nb_loop_in_current_state()
     {
         return nb_loop_in_current_state_;
