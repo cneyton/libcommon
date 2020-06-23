@@ -40,7 +40,7 @@ public:
      */
     Id add(int64_t now, int64_t delay, Callback callback)
     {
-        std::unique_lock<std::mutex> lk(mutex_run_);
+        std::unique_lock<std::recursive_mutex> lk(mutex_run_);
         Id id = nextId_++;
         timeouts_.insert({id, now + delay, -1, std::move(callback)});
         return id;
@@ -56,7 +56,7 @@ public:
      */
     Id add_repeating(int64_t now, int64_t interval, Callback callback)
     {
-        std::unique_lock<std::mutex> lk(mutex_run_);
+        std::unique_lock<std::recursive_mutex> lk(mutex_run_);
         Id id = nextId_++;
         timeouts_.insert({id, now + interval, interval, std::move(callback)});
         return id;
@@ -68,7 +68,7 @@ public:
      */
     bool erase(Id id)
     {
-        std::unique_lock<std::mutex> lk(mutex_run_);
+        std::unique_lock<std::recursive_mutex> lk(mutex_run_);
         return timeouts_.get<BY_ID>().erase(id);
     }
 
@@ -77,7 +77,7 @@ public:
      */
     void clear()
     {
-        std::unique_lock<std::mutex> lk(mutex_run_);
+        std::unique_lock<std::recursive_mutex> lk(mutex_run_);
         timeouts_.clear();
     }
 
@@ -140,13 +140,13 @@ private:
         BY_EXPIRATION = 1,
     };
 
-    Set        timeouts_;
-    Id         nextId_;
-    std::mutex mutex_run_;
+    Set                  timeouts_;
+    Id                   nextId_;
+    std::recursive_mutex mutex_run_;
 
     int64_t run_internal(int64_t now, bool onceOnly)
     {
-        std::unique_lock<std::mutex> lk(mutex_run_);
+        std::unique_lock<std::recursive_mutex> lk(mutex_run_);
         auto& byExpiration = timeouts_.get<BY_EXPIRATION>();
         int64_t nextExp;
         do {
