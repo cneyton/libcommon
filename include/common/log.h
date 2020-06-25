@@ -30,6 +30,7 @@ public:
 
     virtual ~Log() {};
 
+    Logger get_logger() {return logger_;};
     void set_log_level(spdlog::level::level_enum level)
     {
         logger_->set_level(level);
