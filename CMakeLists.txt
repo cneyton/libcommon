@@ -15,11 +15,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # dependencies
 ################################################################################
 # log
-add_subdirectory(spdlog)
+add_subdirectory(dependencies/spdlog)
 # json
-set(JSON_BuildTests OFF)
-set(JSON_Install OFF)
-add_subdirectory(json)
+set(JSON_BuildTests OFF CACHE INTERNAL "")
+set(JSON_Install    OFF CACHE INTERNAL "")
+add_subdirectory(dependencies/json)
 
 ################################################################################
 # build
