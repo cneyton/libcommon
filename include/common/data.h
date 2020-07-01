@@ -7,8 +7,6 @@
 #include <memory>
 #include <mutex>
 
-#include <gsl/gsl>
-
 #include "log.h"
 
 /*
@@ -26,9 +24,13 @@ namespace data
 constexpr size_t queue_max_size = 1000;
 
 using ConsumerKey = int;
-using ByteBuffer  = std::vector<uint8_t>;
-using View        = gsl::span<const uint8_t>;
-using ShrdQueue   = std::queue<std::shared_ptr<ByteBuffer>>;
+using ShrdQueue   = std::queue<std::shared_ptr<std::string>>;
+
+class data_queue_error: public std::runtime_error
+{
+public:
+    data_queue_error(const std::string& what_arg): std::runtime_error(what_arg) {}
+};
 
 class Queue
 {
@@ -40,15 +42,14 @@ public:
 
     virtual ~Queue() {};
 
-    int push(const gsl::span<const uint8_t> span)
+    int push(std::string_view v)
     {
-        if (static_cast<size_t>(span.size()) != elt_size_) {
-            common_die(logger_, -1, "invalid size : {} != {}", span.size(), elt_size_);
-        }
+        if (v.size() != elt_size_)
+            throw data_queue_error(fmt::format("invalid data size: {} != {}", v.size(), elt_size_));
 
         std::unique_lock<std::mutex> lk(mutex_);
-        ByteBuffer buf(span.cbegin(), span.cend());
-        auto shr = std::make_shared<ByteBuffer>(buf);
+        std::string buf(v);
+        auto shr = std::make_shared<std::string>(buf);
         for (auto& pair: q_map_) {
             if (pair.second.size() < max_size_)
                 pair.second.push(shr);
@@ -58,7 +59,7 @@ public:
         return 0;
     }
 
-    int pop(ConsumerKey& key, ByteBuffer& buffer)
+    int pop(ConsumerKey& key, std::string& buffer)
     {
         std::unique_lock<std::mutex> lk(mutex_);
 
@@ -72,11 +73,11 @@ public:
         auto shr = search->second.front();
         search->second.pop();
 
-        buffer = ByteBuffer(*shr);
+        buffer = std::string(*shr);
         return 1;
     }
 
-    int pop_chunk(ConsumerKey& key, size_t chunk_size, std::vector<ByteBuffer>& chunk)
+    int pop_chunk(ConsumerKey& key, size_t chunk_size, std::vector<std::string>& chunk)
     {
         std::unique_lock<std::mutex> lk(mutex_);
 
@@ -175,7 +176,7 @@ public:
      */
     virtual int eof()         {return 0;}
 
-    int push(type t, const View& v)
+    int push(type t, std::string_view v)
     {
         int ret;
         switch (t) {
@@ -195,7 +196,7 @@ public:
         return 0;
     }
 
-    int pop(type t, ConsumerKey key, ByteBuffer& buf)
+    int pop(type t, ConsumerKey key, std::string& buf)
     {
         int ret;
         switch (t) {
@@ -213,7 +214,7 @@ public:
         return ret;
     }
 
-    int pop_chunk(type t, ConsumerKey& key, size_t chunk_size, std::vector<ByteBuffer>& chunk)
+    int pop_chunk(type t, ConsumerKey& key, size_t chunk_size, std::vector<std::string>& chunk)
     {
         int ret;
         switch (t) {
@@ -248,7 +249,7 @@ public:
 
     Handler * get_handler() const {return h_;}
 
-    int push(type t, const View& v)
+    int push(type t, std::string_view v)
     {
         int ret;
         ret = h_->push(t, v);
@@ -274,7 +275,7 @@ public:
         key_ = h_->add_consumer();
     }
 
-    int pop(type t, ByteBuffer& buf)
+    int pop(type t, std::string& buf)
     {
         int ret;
         ret = h_->pop(t, key_, buf);
@@ -282,7 +283,7 @@ public:
         return ret;
     }
 
-    int pop_chunk(type t, size_t chunk_size, std::vector<ByteBuffer>& chunk)
+    int pop_chunk(type t, size_t chunk_size, std::vector<std::string>& chunk)
     {
         int ret;
         ret = h_->pop_chunk(t, key_, chunk_size, chunk);
