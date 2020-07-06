@@ -1,165 +1,42 @@
-#ifndef DATA_H
-#define DATA_H
+#pragma once
 
 #include <vector>
 #include <map>
-#include <queue>
-#include <memory>
-#include <mutex>
 
 #include "log.h"
+#include "readerwriterqueue.h"
 
-/*
- * A queue that support several consumer requiring a copy of the data.
- * A shared pointer to each elt is stored into several queue. One per consumer.
- *
- * Supports popping chunks off the queue by returning a vector of elements
- */
 namespace common
 {
 
 namespace data
 {
 
-constexpr size_t queue_max_size = 1000;
-
-using ConsumerKey = int;
-using ShrdQueue   = std::queue<std::shared_ptr<std::string>>;
-
-class data_queue_error: public std::runtime_error
+class data_error: public std::runtime_error
 {
 public:
-    data_queue_error(const std::string& what_arg): std::runtime_error(what_arg) {}
-};
-
-class Queue
-{
-public:
-    Queue(Logger logger, size_t elt_size): logger_(logger), elt_size_(elt_size),
-        q_map_(std::map<ConsumerKey, ShrdQueue>()) {}
-    Queue(Logger logger, size_t elt_size, size_t max_size): logger_(logger), elt_size_(elt_size),
-        max_size_(max_size), q_map_(std::map<ConsumerKey, ShrdQueue>()) {}
-
-    virtual ~Queue() {};
-
-    int push(std::string_view v)
-    {
-        if (v.size() != elt_size_)
-            throw data_queue_error(fmt::format("invalid data size: {} != {}", v.size(), elt_size_));
-
-        std::unique_lock<std::mutex> lk(mutex_);
-        std::string buf(v);
-        auto shr = std::make_shared<std::string>(buf);
-        for (auto& pair: q_map_) {
-            if (pair.second.size() < max_size_)
-                pair.second.push(shr);
-            else
-                log_warn(logger_, "queue exceeding {} elements, discarding data...", max_size_);
-        }
-        return 0;
-    }
-
-    int pop(ConsumerKey& key, std::string& buffer)
-    {
-        std::unique_lock<std::mutex> lk(mutex_);
-
-        auto search = q_map_.find(key);
-        if (search == q_map_.end())
-            common_die(logger_, -1, "invalid key");
-
-        if (search->second.empty())
-            return 0;
-
-        auto shr = search->second.front();
-        search->second.pop();
-
-        buffer = std::string(*shr);
-        return 1;
-    }
-
-    int pop_chunk(ConsumerKey& key, size_t chunk_size, std::vector<std::string>& chunk)
-    {
-        std::unique_lock<std::mutex> lk(mutex_);
-
-        auto search = q_map_.find(key);
-        if (search == q_map_.end())
-            common_die(logger_, -1, "invalid key");
-
-        if (search->second.size() < chunk_size)
-            return 0;
-
-        chunk.reserve(chunk_size);
-        for (size_t i = 0; i < chunk_size; i++) {
-            auto shr = search->second.front();
-            chunk.push_back(*shr);
-            search->second.pop();
-        }
-
-        return 1;
-    }
-
-    int subscribe(ConsumerKey key)
-    {
-        std::unique_lock<std::mutex> lk(mutex_);
-
-        auto search = q_map_.find(key);
-        if (search != q_map_.end())
-            common_die(logger_, -1, "key already in use");
-
-        q_map_[key] = ShrdQueue();
-        return 0;
-    }
-
-private:
-    Logger logger_;
-    size_t elt_size_;
-    size_t max_size_     = queue_max_size;
-
-    std::map<ConsumerKey, ShrdQueue> q_map_;
-    std::mutex                       mutex_;
-};
-
-enum class type {
-    us,
-    toco,
-    oxy
+    data_error(const std::string& what_arg): std::runtime_error(what_arg) {}
 };
 
 class Handler: public Log
 {
 public:
-    Handler(Logger logger): Log(logger), us_queue_(std::make_unique<Queue>(logger, 0)),
-        oxy_queue_(std::make_unique<Queue>(logger, 0)) {}
+    Handler(Logger logger): Log(logger) {}
 
-    ConsumerKey add_consumer()
+    bool add_queue(std::string& type, size_t max_size=default_queue_size)
     {
-        nb_consumer_++;
-        ConsumerKey key = static_cast<ConsumerKey>(nb_consumer_);
-        keys_.push_back(key);
-        return key;
+        auto [it, success] = map_.emplace(type, max_size);
+        return success;
     }
 
-    int reinit_queue(type t, size_t elt_size, size_t max_size)
+    void reinit_queue(std::string& type)
     {
-        switch (t) {
-        case type::us:
-            us_queue_ = std::make_unique<Queue>(logger_, elt_size, max_size);
-            // resubsribe the consumers
-            for (auto& key: keys_) {
-                us_queue_->subscribe(key);
-            }
-            break;
-        case type::oxy:
-            oxy_queue_ = std::make_unique<Queue>(logger_, elt_size, max_size);
-            // resubsribe the consumers
-            for (auto& key: keys_) {
-                oxy_queue_->subscribe(key);
-            }
-            break;
-        default:
-            common_die(logger_, -2, "invalid type, you should not be here");
+        auto found = map_.find(type);
+        if (found != map_.end()) {
+            while(found->second.pop()) {};
+        } else {
+            log_warn(logger_, "{} queue not found", type);
         }
-        return 0;
     }
 
     /*
@@ -176,128 +53,55 @@ public:
      */
     virtual int eof()         {return 0;}
 
-    int push(type t, std::string_view v)
+    void push(std::string& type, std::string_view v)
     {
-        int ret;
-        switch (t) {
-        case type::us:
-            ret = us_queue_->push(v);
-            common_die_zero(logger_, ret, -1, "failed to push data to us queue");
-            break;
-        case type::oxy:
-            ret = oxy_queue_->push(v);
-            common_die_zero(logger_, ret, -1, "failed to push data to oxy queue");
-            break;
-        default:
-            common_die(logger_, -2, "invalid type, you should not be here");
+        auto found = map_.find(type);
+        if (found != map_.end()) {
+            if (!found->second.try_enqueue(std::string(v)))
+                log_warn(logger_, "{} queue full, discarding data", type);
+        } else {
+            log_warn(logger_, "{} queue not found", type);
         }
-        ret = data_pushed();
-        common_die_zero(logger_, ret, -3, "cb failed");
-        return 0;
+        data_pushed();
     }
 
-    int pop(type t, ConsumerKey key, std::string& buf)
+    bool pop(std::string type, std::string& buf)
     {
-        int ret;
-        switch (t) {
-        case type::us:
-            ret = us_queue_->pop(key, buf);
-            common_die_zero(logger_, ret, -1, "failed to pop data from us queue");
-            break;
-        case type::oxy:
-            ret = oxy_queue_->pop(key, buf);
-            common_die_zero(logger_, ret, -2, "failed to pop data from oxy queue");
-            break;
-        default:
-            common_die(logger_, -3, "invalid type, you should not be here");
+        bool ret = false;
+        auto found = map_.find(type);
+        if (found != map_.end()) {
+            ret = found->second.try_dequeue(buf);
+        } else {
+            log_warn(logger_, "{} queue not found", type);
         }
         return ret;
     }
 
-    int pop_chunk(type t, ConsumerKey& key, size_t chunk_size, std::vector<std::string>& chunk)
+    bool pop_chunk(std::string& type, size_t chunk_size, std::vector<std::string>& chunk)
     {
-        int ret;
-        switch (t) {
-        case type::us:
-            ret = us_queue_->pop_chunk(key, chunk_size, chunk);
-            common_die_zero(logger_, ret, -1, "failed to pop chunk from us queue");
-            break;
-        case type::oxy:
-            ret = oxy_queue_->pop_chunk(key, chunk_size, chunk);
-            common_die_zero(logger_, ret, -2, "failed to pop chunk from oxy queue");
-            break;
-        default:
-            common_die(logger_, -3, "invalid type, you should not be here");
+        bool ret = false;
+        auto found = map_.find(type);
+        if (found != map_.end()) {
+            log_warn(logger_, "{} queue not found", type);
+            return ret;
         }
-        return ret;
-    }
 
+        if (found->second.size_approx() < chunk_size)
+            return ret;
 
-private:
-    uint16_t nb_consumer_ = 0;
-    std::vector<ConsumerKey> keys_;
-
-    // TODO: maybe change all the queues with a vector or map
-    std::unique_ptr<Queue> us_queue_;
-    std::unique_ptr<Queue> oxy_queue_;
-};
-
-class Producer: virtual public Log
-{
-public:
-    Producer(Logger logger, Handler * h): Log(logger), h_(h) {}
-
-    Handler * get_handler() const {return h_;}
-
-    int push(type t, std::string_view v)
-    {
-        int ret;
-        ret = h_->push(t, v);
-        common_die_zero(logger_, ret, -1, "producer failed to push buffer");
-        return 0;
-    }
-
-    int eof()
-    {
-        h_->eof();
-        return 0;
+        std::string buf;
+        size_t i = 0;
+        while (found->second.try_dequeue(buf) && i++ < chunk_size) {
+            chunk.push_back(std::move(buf));
+        }
+        return true;
     }
 
 private:
-    Handler * h_;
-};
-
-class Consumer: virtual public Log
-{
-public:
-    Consumer(Logger logger, Handler * h): Log(logger), h_(h)
-    {
-        key_ = h_->add_consumer();
-    }
-
-    int pop(type t, std::string& buf)
-    {
-        int ret;
-        ret = h_->pop(t, key_, buf);
-        common_die_zero(logger_, ret, -1, "consumer {} failed to pop elt", key_);
-        return ret;
-    }
-
-    int pop_chunk(type t, size_t chunk_size, std::vector<std::string>& chunk)
-    {
-        int ret;
-        ret = h_->pop_chunk(t, key_, chunk_size, chunk);
-        common_die_zero(logger_, ret, -1, "consumer {} failed to pop chunk", key_);
-        return ret;
-    }
-
-private:
-    Handler     * h_;
-    ConsumerKey   key_;
+    static constexpr size_t default_queue_size = 1000;
+    std::map<std::string, ReaderWriterQueue<std::string>> map_;
 };
 
 } /* namespace data */
 
 } /* namespace common */
-
-#endif /* DATA_H */
