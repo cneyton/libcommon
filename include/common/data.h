@@ -86,16 +86,17 @@ class Handler: public Log
 public:
     Handler(Logger logger): Log(logger) {}
 
-    bool add_queue(std::string& type, size_t max_size=default_queue_size)
+    bool add_queue(std::string_view type, size_t max_size=default_queue_size)
     {
-        auto [it, success] = map_.emplace(type, max_size);
-        return success;
+        auto [it_queue, success_queue] = queues_.emplace(type, max_size);
+        auto [it_eof, success_eof] = eofs_.emplace(type, false);
+        return success_queue && success_eof;
     }
 
-    void reinit_queue(std::string& type)
+    void reinit_queue(std::string_view type)
     {
-        auto found = map_.find(type);
-        if (found != map_.end()) {
+        auto found = queues_.find(std::string(type));
+        if (found != queues_.end()) {
             while(found->second.pop()) {};
         } else {
             log_warn(logger_, "{} queue not found", type);
@@ -116,10 +117,10 @@ public:
      */
     virtual int eof()         {return 0;}
 
-    void push(std::string& type, std::string_view v)
+    void push(std::string_view type, std::string_view v)
     {
-        auto found = map_.find(type);
-        if (found != map_.end()) {
+        auto found = queues_.find(std::string(type));
+        if (found != queues_.end()) {
             if (!found->second.try_enqueue(std::string(v)))
                 log_warn(logger_, "{} queue full, discarding data", type);
         } else {
@@ -128,11 +129,27 @@ public:
         data_pushed();
     }
 
-    bool pop(std::string type, std::string& buf)
+    void set_eof(std::string_view type)
+    {
+        auto found = eofs_.find(std::string(type));
+        if (found == eofs_.end())
+            throw data_error(fmt::format("{} eof not found", type));
+        found->second = true;
+    }
+
+    void reset_eof(std::string_view type)
+    {
+        auto found = eofs_.find(std::string(type));
+        if (found == eofs_.end())
+            throw data_error(fmt::format("{} eof not found", type));
+        found->second = false;
+    }
+
+    bool pop(std::string_view type, std::string& buf)
     {
         bool ret = false;
-        auto found = map_.find(type);
-        if (found != map_.end()) {
+        auto found = queues_.find(std::string(type));
+        if (found != queues_.end()) {
             ret = found->second.try_dequeue(buf);
         } else {
             log_warn(logger_, "{} queue not found", type);
@@ -140,31 +157,40 @@ public:
         return ret;
     }
 
-    bool pop_chunk(std::string& type, size_t chunk_size, std::vector<std::string>& chunk)
+    // 0 = not enought data
+    // 1 = data retreived
+    // 2 = eof
+    int pop_chunk(std::string_view type, size_t chunk_size, std::vector<std::string>& chunk)
     {
-        bool ret = false;
-        auto found = map_.find(type);
-        if (found != map_.end()) {
-            log_warn(logger_, "{} queue not found", type);
-            return ret;
+        auto found = queues_.find(std::string(type));
+        if (found == queues_.end()) {
+            throw data_error(fmt::format("{} queue not found", type));
         }
 
-        if (found->second.size_approx() < chunk_size)
-            return ret;
+        if (found->second.size_approx() < chunk_size) {
+            auto found_eof = eofs_.find(std::string(type));
+            if (found_eof == eofs_.end()) {
+                throw data_error(fmt::format("{} eof not found", type));
+            }
+            if (found_eof->second)
+                return 2;
+            else
+                return 0;
+        }
 
         std::string buf;
         size_t i = 0;
         while (found->second.try_dequeue(buf) && i++ < chunk_size) {
             chunk.push_back(std::move(buf));
         }
-        return true;
+        return 1;
     }
 
 private:
     static constexpr size_t default_queue_size = 1000;
-    std::map<std::string, ReaderWriterQueue<std::string>> map_;
+    std::map<std::string, ReaderWriterQueue<std::string>> queues_;
+    std::map<std::string, bool>                           eofs_;
 };
 
 } /* namespace data */
-
 } /* namespace common */
