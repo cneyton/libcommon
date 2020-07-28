@@ -1,5 +1,4 @@
-#ifndef THREAD_H
-#define THREAD_H
+#pragma once
 
 #include <thread>
 #include <atomic>
@@ -95,5 +94,3 @@ protected:
 };
 
 } /* namespace common */
-
-#endif /* THREAD_H */
