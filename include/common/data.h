@@ -12,6 +12,69 @@ namespace common
 namespace data
 {
 
+namespace oxy
+{
+
+class Frame
+{
+public:
+    Frame(const std::string_view&);
+
+private:
+    using WaveformData = std::array<char, 8>;
+    friend std::ostream& operator<<(std::ostream& os, const Frame& f);
+
+    struct POD {
+        int16_t  spo2;
+        int16_t  pulse_rate;
+        uint16_t perfusion_index;
+        uint16_t pvi;
+        std::array<WaveformData, 63> waveforms;
+    }__attribute__((packed)) pod_;
+};
+
+} /* namespace oxy */
+
+namespace us
+{
+
+template<typename T>
+struct IQ
+{
+    using elem_type = T;
+    T i; T q;
+};
+
+class Frame
+{
+public:
+    Frame();
+    virtual ~Frame();
+
+private:
+};
+
+} /* namespace us */
+
+namespace toco
+{
+
+class Frame
+{
+public:
+    Frame(const std::string_view&);
+
+private:
+    using Sample = uint16_t;
+    static constexpr uint8_t nb_samples = 4;
+
+    struct POD {
+        std::array<Sample, nb_samples> waveform;
+    }__attribute__((packed)) pod_;
+};
+
+} /* namespace toco */
+
 class data_error: public std::runtime_error
 {
 public:
