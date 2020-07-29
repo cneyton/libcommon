@@ -7,3 +7,6 @@
 [submodule "dependencies/readerwriterqueue"]
 	path = dependencies/readerwriterqueue
 	url = https://github.com/cameron314/readerwriterqueue.git
+[submodule "dependencies/concurrentqueue"]
+	path = dependencies/concurrentqueue
+	url = https://github.com/cameron314/concurrentqueue
