@@ -2,6 +2,8 @@
 
 #include <vector>
 #include <map>
+#include <queue>
+#include <mutex>
 
 #include "log.h"
 #include "readerwriterqueue.h"
@@ -86,22 +88,23 @@ class Handler: public Log
 public:
     Handler(Logger logger): Log(logger) {}
 
-    bool add_queue(std::string_view type, size_t max_size=default_queue_size)
+    void add_queue(std::string_view type, size_t max_size=default_queue_size)
     {
-        auto [it_queue, success_queue] = queues_.emplace(type, max_size);
-        auto [it_eof, success_eof] = eofs_.emplace(type, false);
-        return success_queue && success_eof;
+        if (!queues_.emplace(type, std::queue<std::string>()).second)
+            throw data_error("failed to add queue");
+        if (!eofs_.emplace(type, false).second)
+            throw data_error("failed to add queue");
     }
 
-    void reinit_queue(std::string_view type)
-    {
-        auto found = queues_.find(std::string(type));
-        if (found != queues_.end()) {
-            while(found->second.pop()) {};
-        } else {
-            log_warn(logger_, "{} queue not found", type);
-        }
-    }
+    //void reinit_queue(std::string_view type)
+    //{
+        //auto found = queues_.find(std::string(type));
+        //if (found != queues_.end()) {
+            //while(found->second.pop()) {};
+        //} else {
+            //log_warn(logger_, "{} queue not found", type);
+        //}
+    //}
 
     /*
      * Callback called when data is pushed.
@@ -119,10 +122,10 @@ public:
 
     void push(std::string_view type, std::string_view v)
     {
+        std::lock_guard<std::mutex> lk(mutex_);
         auto found = queues_.find(std::string(type));
         if (found != queues_.end()) {
-            if (!found->second.try_enqueue(std::string(v)))
-                log_warn(logger_, "{} queue full, discarding data", type);
+            found->second.push(std::string(v));
         } else {
             log_warn(logger_, "{} queue not found", type);
         }
@@ -131,6 +134,7 @@ public:
 
     void set_eof(std::string_view type)
     {
+        std::lock_guard<std::mutex> lk(mutex_);
         auto found = eofs_.find(std::string(type));
         if (found == eofs_.end())
             throw data_error(fmt::format("{} eof not found", type));
@@ -139,57 +143,63 @@ public:
 
     void reset_eof(std::string_view type)
     {
+        std::lock_guard<std::mutex> lk(mutex_);
         auto found = eofs_.find(std::string(type));
         if (found == eofs_.end())
             throw data_error(fmt::format("{} eof not found", type));
         found->second = false;
     }
 
-    bool pop(std::string_view type, std::string& buf)
-    {
-        bool ret = false;
-        auto found = queues_.find(std::string(type));
-        if (found != queues_.end()) {
-            ret = found->second.try_dequeue(buf);
-        } else {
-            log_warn(logger_, "{} queue not found", type);
-        }
-        return ret;
-    }
+    //bool pop(std::string_view type, std::string& buf)
+    //{
+        //bool ret = false;
+        //auto found = queues_.find(std::string(type));
+        //if (found != queues_.end()) {
+            //ret = found->second.try_dequeue(buf);
+        //} else {
+            //log_warn(logger_, "{} queue not found", type);
+        //}
+        //return ret;
+    //}
 
     // 0 = not enought data
     // 1 = data retreived
     // 2 = eof
     int pop_chunk(std::string_view type, size_t chunk_size, std::vector<std::string>& chunk)
     {
+        std::lock_guard<std::mutex> lk(mutex_);
         auto found = queues_.find(std::string(type));
         if (found == queues_.end()) {
             throw data_error(fmt::format("{} queue not found", type));
         }
 
-        if (found->second.size_approx() < chunk_size) {
+        if (found->second.size() < chunk_size) {
             auto found_eof = eofs_.find(std::string(type));
             if (found_eof == eofs_.end()) {
                 throw data_error(fmt::format("{} eof not found", type));
             }
-            if (found_eof->second)
+            if (found_eof->second) {
+                found_eof->second = false;
                 return 2;
-            else
+            } else {
                 return 0;
+            }
         }
 
         std::string buf;
         size_t i = 0;
-        while (found->second.try_dequeue(buf) && i++ < chunk_size) {
-            chunk.push_back(std::move(buf));
+        while (i++ < chunk_size) {
+            chunk.push_back(std::move(found->second.front()));
+            found->second.pop();
         }
         return 1;
     }
 
 private:
     static constexpr size_t default_queue_size = 1000;
-    std::map<std::string, ReaderWriterQueue<std::string>> queues_;
-    std::map<std::string, bool>                           eofs_;
+    std::map<std::string, std::queue<std::string>> queues_;
+    std::map<std::string, bool>                    eofs_;
+    std::mutex mutex_;
 };
 
 } /* namespace data */
