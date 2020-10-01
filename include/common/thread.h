@@ -5,8 +5,7 @@
 #include <mutex>
 #include <condition_variable>
 
-namespace common
-{
+namespace common {
 
 /**
  * A thread is a thread of execution in a program.
@@ -14,8 +13,7 @@ namespace common
 class Thread
 {
 public:
-    Thread(): run_(false) {}
-    virtual ~Thread() {}
+    virtual ~Thread() = default;
 
     /**
      * Causes this thread to begin execution.
@@ -34,8 +32,9 @@ public:
         run_ = true;
         thread_ = std::thread([this] {run();});
         if (wait_start) {
-            std::unique_lock<std::mutex> lock(mutex_);
-            cond_.wait(lock);
+            std::unique_lock<std::mutex> lk(mutex_);
+            started_ = false;
+            cond_.wait(lk, [this]{return !started_;});
         }
     }
 
@@ -64,16 +63,18 @@ public:
 protected:
     void notify_running(int error)
     {
-        std::unique_lock<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lk(mutex_);
+        started_ = true;
         run_error_ = error;
         cond_.notify_all();
     }
 
 private:
     std::thread             thread_;
-    std::atomic_bool        run_;
+    std::atomic_bool        run_ = false;
     std::mutex              mutex_;
     std::condition_variable cond_;
+    bool                    started_;
     int                     run_error_ = 0;
 };
 
@@ -87,7 +88,7 @@ class BaseThread: public Thread
 {
 public:
     BaseThread(P * parent): parent_(parent) {}
-    virtual ~BaseThread() {}
+    virtual ~BaseThread() = default;
 
 protected:
     P * parent_;
