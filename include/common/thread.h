@@ -30,11 +30,11 @@ public:
     virtual void start(bool wait_start)
     {
         run_ = true;
+        std::unique_lock<std::mutex> lk(mutex_);
         thread_ = std::thread([this] {run();});
         if (wait_start) {
-            std::unique_lock<std::mutex> lk(mutex_);
             started_ = false;
-            cond_.wait(lk, [this]{return !started_;});
+            cond_.wait(lk, [this]{return started_;});
         }
     }
 
