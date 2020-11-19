@@ -1,9 +1,9 @@
-#ifndef LOG_H_
-#define LOG_H_
+#pragma once
 
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/sinks/systemd_sink.h>
 #include "spdlog/fmt/bundled/ostream.h"
 
 #define likely(x)   __builtin_expect((x), 1)
@@ -12,8 +12,7 @@
 #include <string>
 #include <memory>
 
-namespace common
-{
+namespace common {
 
 using Logger = std::shared_ptr<spdlog::logger>;
 
@@ -28,7 +27,7 @@ public:
         logger_->set_level(spdlog::level::info);
     };
 
-    virtual ~Log() {};
+    virtual ~Log() = default;
 
     Logger get_logger() {return logger_;};
     void set_log_level(spdlog::level::level_enum level)
@@ -255,5 +254,3 @@ protected:
     } while(0)
 
 } /* namespace common */
-
-#endif /* LOG_H */
