@@ -133,7 +133,6 @@ public:
 
 int host_cli(Test& test)
 {
-    bool exit = false;
     int  choice = 254;
 
     std::string usr_in;
@@ -175,14 +174,14 @@ int host_cli(Test& test)
                 break;
 
             case 255:
-                exit = true;
+                exit_test = true;
                 break;
 
             case 254:
             default:
                 break;
         }
-    } while (!exit);
+    } while (!exit_test);
 
     return 0;
 }
