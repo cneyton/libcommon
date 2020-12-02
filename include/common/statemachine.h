@@ -25,13 +25,18 @@ public:
         error(const std::string& what_arg): std::runtime_error(what_arg) {}
     };
 
-    struct State
+    struct Transition
     {
         using Handler = std::function<transition_status()>;
+        T       next_state_id;
+        Handler handler;
+    };
+
+    struct State
+    {
         std::string              name;
         T                        id;
-        /// map handler to the next state id
-        std::map<T, Handler>     transitions;
+        std::vector<Transition>  transitions;
     };
 
     using TransitionHandler = std::function<void(const State*, const State*)>;
@@ -60,6 +65,7 @@ public:
             reinit_requested_  = true;
             return;
         }
+        reinit_requested_ = false;
         prev_state_ = curr_state_;
         curr_state_ = initial_state_;
         nb_loop_in_current_state_ = 0;
@@ -104,21 +110,20 @@ public:
         {
             std::unique_lock<std::mutex> lk(mutex_);
             // execute each transition handler to check is a state change is required
-            for (auto const& [id, handler]: curr_state_->transitions) {
-                if (handler() == transition_status::goto_next_state) {
-                    if (id != curr_state_->id) {
-                        nb_loop_in_current_state_ = 0;
-                        auto search = map_.find(id);
-                        if (search == map_.end())
-                            throw error("next state not found");
-                        prev_state_ = curr_state_;
-                        curr_state_ = &(search->second);
-                        if (transition_handler_) {
-                            try {
-                                transition_handler_(prev_state_, curr_state_);
-                            } catch (...) {
-                                error("error during transition callback");
-                            }
+            for (auto const& t: curr_state_->transitions) {
+                if (t.handler() == transition_status::goto_next_state &&
+                    t.next_state_id != curr_state_->id) {
+                    nb_loop_in_current_state_ = 0;
+                    auto search = map_.find(t.next_state_id);
+                    if (search == map_.end())
+                        throw error("next state not found");
+                    prev_state_ = curr_state_;
+                    curr_state_ = &(search->second);
+                    if (transition_handler_) {
+                        try {
+                            transition_handler_(prev_state_, curr_state_);
+                        } catch (...) {
+                            error("error during transition callback");
                         }
                     }
                     break;
@@ -127,10 +132,8 @@ public:
         }
         cv_.notify_all();
 
-        if (reinit_requested_) {
+        if (reinit_requested_)
             reinit();
-            reinit_requested_ = false;
-        }
     }
 
 private:
