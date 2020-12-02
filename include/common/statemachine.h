@@ -1,5 +1,4 @@
-#ifndef STATEMACHINE_H
-#define STATEMACHINE_H
+#pragma once
 
 #include <cstdint>
 #include <functional>
@@ -8,199 +7,147 @@
 #include <condition_variable>
 #include <chrono>
 #include <limits>
+#include <map>
 
-#include "log.h"
-
-namespace common
-{
-
-namespace statemachine
-{
-
-constexpr int goto_next_state = 1;
-constexpr int stay_curr_state = 0;
-
-using TransitionHandler = std::function<int()>;
-
-template<typename T>
-class Transition
-{
-public:
-    Transition(std::function<int()> handler, T next_state_id)
-        : next_state_id_(next_state_id), handler_(handler) {}
-
-    T                    get_next_state() const {return next_state_id_;}
-    TransitionHandler    get_handler()    const {return handler_;}
-
-private:
-    T                    next_state_id_;
-    TransitionHandler    handler_;
-};
-
-template<typename T>
-class State
-{
-public:
-    State(std::string name, T id, std::vector<Transition<T>> transitions)
-        : name_(name), id_(id), transitions_(transitions) {}
-
-    std::string                 get_name()        const {return name_;}
-    T                           get_id()          const {return id_;}
-    std::vector<Transition<T>>  get_transitions() const {return transitions_;}
-
-private:
-    std::string                 name_;
-    T                           id_;
-    std::vector<Transition<T>>  transitions_;
-};
-
-} /* namespace statemachine */
-
-
-template<typename T>
-using StatesList = std::vector<statemachine::State<T>>;
+namespace common {
 
 template<typename T>
 class Statemachine
 {
 public:
-    Statemachine(Logger logger, const std::string name, const StatesList<T>& states,
-                 const T initial_state_id)
-        : logger_(logger), name_(name), states_(states)
+    enum class transition_status {
+        stay_curr_state = 0,
+        goto_next_state = 1
+    };
+
+    struct error: std::runtime_error
     {
-        for (auto const& st: states_) {
-            if (st.get_id() == initial_state_id) {
-                current_state_ = &st;
-                initial_state_ = &st;
+        error(const std::string& what_arg): std::runtime_error(what_arg) {}
+    };
+
+    struct State
+    {
+        using Handler = std::function<int()>;
+        std::string              name;
+        T                        id;
+        /// map handler to the next state id
+        std::map<T, Handler>     transitions;
+    };
+
+    using TransitionHandler = std::function<void(const State*, const State*)>;
+    using StateList         = std::vector<State>;
+
+    Statemachine(std::string name, const StateList& states, T initial_state_id):
+        name_(name)
+    {
+        for (auto const& st: states) {
+            map_[st.id] = st;
+        }
+
+        const auto search = map_.find(initial_state_id);
+        if (search == map_.end())
+            throw error("initial state no found in states");
+
+        initial_state_ = &(search->second);
+        curr_state_    = initial_state_;
+        prev_state_    = initial_state_;
+    }
+
+    void reinit()
+    {
+        std::unique_lock<std::mutex> lk(mutex_, std::defer_lock);
+        if (!lk.try_lock()) {
+            reinit_requested_  = true;
+            return;
+        }
+        prev_state_ = curr_state_;
+        curr_state_ = initial_state_;
+        nb_loop_in_current_state_ = 0;
+        if (transition_handler_) {
+            try {
+                transition_handler_(prev_state_, curr_state_);
+            } catch (...) {
+                error("error during transition callback");
             }
         }
     }
 
-    int reinit()
+    void enable()        { enabled_ = true; }
+    void disable()       { enabled_ = false; }
+    T curr_state() const { return curr_state_->id; }
+    T prev_state() const { return prev_state_->id; }
+    uint64_t nb_loop_in_current_state() { return nb_loop_in_current_state_; }
+    void set_transition_handler(TransitionHandler&& h) { transition_handler_ = h; }
+
+    std::cv_status wait_for(T st, const std::chrono::milliseconds timeout)
     {
-        std::unique_lock<std::timed_mutex> lk(mutex_, std::defer_lock);
-        if (!lk.try_lock()) {
-            reinit_requested_  = true;
-            log_info(logger_, "unable to reinit, try again later");
-            return 0;
-        }
-        current_state_ = initial_state_;
-        nb_loop_in_current_state_ = 0;
-        return 0;
+        std::unique_lock<std::mutex> lk(mutex_);
+        return  cv_.wait_for(lk, timeout, [&] {return curr_state() == st;});
     }
 
-    int enable()
+    void wait(T st)
     {
-        enabled_ = true;
-        return 0;
+        std::unique_lock<std::mutex> lk(mutex_);
+        cv_.wait(lk, [&] {return curr_state() == st;});
     }
 
-    int disable()
-    {
-        enabled_ = false;
-        return 0;
-    }
-
-    int display_trace()
-    {
-        verbose_ = true;
-        return 0;
-    }
-
-    int wait_for(const T st, const std::chrono::milliseconds timeout)
-    {
-        std::unique_lock<std::mutex> lk(mutex_state_);
-        return  cv_state_.wait_for(lk, timeout, [&] {return get_state() == st;}) ? 0:-1;
-    }
-
-    void wait(const T st)
-    {
-        std::unique_lock<std::mutex> lk(mutex_state_);
-        cv_state_.wait(lk, [&] {return get_state() == st;});
-    }
-
-    uint32_t get_nb_loop_in_current_state()
-    {
-        return nb_loop_in_current_state_;
-    }
-
-    T get_state() const
-    {
-        return current_state_->get_id();
-    }
-
-    int wakeup()
+    void wakeup()
     {
         if (!enabled_)
-            return 0;
+            return;
 
         nb_loop_in_current_state_++;
         /* hack to avoid overload on long states */
         if (nb_loop_in_current_state_ == std::numeric_limits<uint64_t>::max())
             nb_loop_in_current_state_ = 100;
 
-        int ret;
         {
-            std::unique_lock<std::timed_mutex> lk(mutex_, std::defer_lock);
-
-            if (!lk.try_lock_for(std::chrono::milliseconds(1000)))
-                common_die(logger_, -1, "fail to lock statemachine {}", name_);
-
-            T next_state_id = current_state_->get_id();
-
-            for (auto const& t: current_state_->get_transitions()) {
-                ret = t.get_handler()();
-                common_die_zero(logger_, ret, -1, "transition handler error");
-                if (ret == statemachine::goto_next_state) {
-                    if (t.get_next_state() != next_state_id)
+            std::unique_lock<std::mutex> lk(mutex_);
+            // execute each transition handler to check is a state change is required
+            for (auto const& [id, handler]: curr_state_->transitions) {
+                if (handler() == static_cast<int>(transition_status::goto_next_state)) {
+                    if (id != curr_state_->id) {
                         nb_loop_in_current_state_ = 0;
-                    next_state_id = t.get_next_state();
+                        auto search = map_.find(id);
+                        if (search == map_.end())
+                            throw error("next state not found");
+                        prev_state_ = curr_state_;
+                        curr_state_ = &(search->second);
+                        if (transition_handler_) {
+                            try {
+                                transition_handler_(prev_state_, curr_state_);
+                            } catch (...) {
+                                error("error during transition callback");
+                            }
+                        }
+                    }
                     break;
                 }
             }
-
-            if (next_state_id != current_state_->get_id() && !reinit_requested_) {
-                for (auto const& st: states_) {
-                    if (st.get_id() == next_state_id) {
-                        std::unique_lock<std::mutex> lk(mutex_state_);
-                        current_state_ = &st;
-                        cv_state_.notify_all();
-                        break;
-                    }
-                }
-                if (verbose_)
-                    log_info(logger_, "statemachine {} -> {}", name_, current_state_->get_name());
-            }
         }
+        cv_.notify_all();
 
         if (reinit_requested_) {
-            log_info(logger_, "reinit the statemachine {} now", name_);
-            ret = reinit();
-            common_die_zero(logger_, ret, -1, "statemachine {} reinit error", name_);
+            reinit();
             reinit_requested_ = false;
         }
-
-        return 0;
     }
 
 private:
-    Logger      logger_;
+    std::string        name_;
+    std::map<T, State> map_;
+    const State      * initial_state_;
+    const State      * curr_state_;
+    const State      * prev_state_;
 
-    std::mutex              mutex_state_;
-    std::timed_mutex        mutex_;
-    std::condition_variable cv_state_;
+    TransitionHandler  transition_handler_;
 
     uint64_t    nb_loop_in_current_state_ = 0;
-    bool        verbose_          = false;
     bool        reinit_requested_ = false;
     bool        enabled_          = true;
 
-    std::string            const   name_;
-    StatesList<T>          const   states_;
-    statemachine::State<T> const * initial_state_;
-    statemachine::State<T> const * current_state_;
+    std::mutex              mutex_;
+    std::condition_variable cv_;
 };
 
 } /* namespace common */
-
-#endif /* STATEMACHINE_H */

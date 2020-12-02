@@ -5,7 +5,9 @@
 #include "common/log.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 
+using namespace common;
 auto console = spdlog::stdout_color_mt("console");
+bool exit_test = false;
 
 class Test
 {
@@ -63,19 +65,19 @@ private:
         return 0;
     }
 
-    const common::StatesList<states> states_ {
+    const common::Statemachine<states>::StateList states_ {
         {"disconnected", states::disconnected,
-            {{std::bind(&Test::handler_state_disconnected_, this), states::disconnected},
-             {std::bind(&Test::check_connection_opened_, this),    states::connecting}}
+            {{states::disconnected, std::bind(&Test::handler_state_disconnected_, this)},
+             {states::connecting,   std::bind(&Test::check_connection_opened_, this)}}
         },
         {"connecting", states::connecting,
-            {{std::bind(&Test::handler_state_connecting_, this),   states::connecting},
-             {std::bind(&Test::check_disconnected_, this),         states::disconnected},
-             {std::bind(&Test::check_connected_, this),            states::connected}}
+            {{states::connecting,   std::bind(&Test::handler_state_connecting_, this)},
+             {states::disconnected, std::bind(&Test::check_disconnected_, this)},
+             {states::connected,    std::bind(&Test::check_connected_, this)}}
         },
         {"connected", states::connected,
-            {{std::bind(&Test::handler_state_connected_, this),    states::connected},
-             {std::bind(&Test::check_disconnected_, this),         states::disconnected}}
+            {{states::connected,    std::bind(&Test::handler_state_connected_, this)},
+             {states::disconnected, std::bind(&Test::check_disconnected_, this)}}
         }
     };
 
@@ -88,33 +90,40 @@ private:
     common::Logger logger_;
 
 public:
-    Test(common::Logger logger) : statemachine_(logger, "sm_test", states_, states::disconnected)
+    Test(common::Logger logger) : statemachine_("sm_test", states_, states::disconnected)
     {
-        statemachine_.display_trace();
+        statemachine_.set_transition_handler(
+            [logger] (const Statemachine<states>::State * p, const Statemachine<states>::State * c)
+            {
+                log_info(logger, "statemachine : {} -> {}", p->name, c->name);
+            });
     }
+
     void run()
     {
-        int ret;
-        while (1) {
-            ret = statemachine_.wakeup();
-            common_die_zero_void(console, ret, "statemachine error");
+        while (!exit_test) {
+            statemachine_.wakeup();
         }
     }
+
     int open_connection()
     {
         connection_opened_ = true;
         return 0;
     }
+
     int disconnect()
     {
         disconnected_ = true;
         return 0;
     }
+
     int establish_connection()
     {
         connection_established_ = true;
         return 0;
     }
+
     int reinit_statemachine()
     {
         statemachine_.reinit();
