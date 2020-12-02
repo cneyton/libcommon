@@ -18,51 +18,51 @@ private:
         connected
     };
 
-    int handler_state_disconnected_()
+    transition_status handler_state_disconnected_()
     {
         log_info(console, "disconnected");
         disconnected_ = false;
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-        return 0;
+        return transition_status::stay_curr_state;
     }
 
-    int handler_state_connecting_()
+    transition_status handler_state_connecting_()
     {
         log_info(console, "connecting");
         connection_opened_ = false;
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-        return 0;
+        return transition_status::stay_curr_state;
     }
 
-    int handler_state_connected_()
+    transition_status handler_state_connected_()
     {
         log_info(console, "connected");
         connection_established_ = false;
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-        return 0;
+        return transition_status::stay_curr_state;
     }
 
-    int check_connection_opened_()
+    transition_status check_connection_opened_()
     {
         if (connection_opened_) {
             log_info(console, "check ok");
-            return 1;
+            return transition_status::goto_next_state;
         }
-        return 0;
+        return transition_status::stay_curr_state;
     }
 
-    int check_connected_()
+    transition_status check_connected_()
     {
         if (connection_established_)
-            return 1;
-        return 0;
+            return transition_status::goto_next_state;
+        return transition_status::stay_curr_state;
     }
 
-    int check_disconnected_()
+    transition_status check_disconnected_()
     {
         if (disconnected_)
-            return 1;
-        return 0;
+            return transition_status::goto_next_state;
+        return transition_status::stay_curr_state;
     }
 
     const common::Statemachine<states>::StateList states_ {

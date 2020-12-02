@@ -11,15 +11,15 @@
 
 namespace common {
 
+enum class transition_status {
+    stay_curr_state,
+    goto_next_state
+};
+
 template<typename T>
 class Statemachine
 {
 public:
-    enum class transition_status {
-        stay_curr_state = 0,
-        goto_next_state = 1
-    };
-
     struct error: std::runtime_error
     {
         error(const std::string& what_arg): std::runtime_error(what_arg) {}
@@ -27,7 +27,7 @@ public:
 
     struct State
     {
-        using Handler = std::function<int()>;
+        using Handler = std::function<transition_status()>;
         std::string              name;
         T                        id;
         /// map handler to the next state id
@@ -105,7 +105,7 @@ public:
             std::unique_lock<std::mutex> lk(mutex_);
             // execute each transition handler to check is a state change is required
             for (auto const& [id, handler]: curr_state_->transitions) {
-                if (handler() == static_cast<int>(transition_status::goto_next_state)) {
+                if (handler() == transition_status::goto_next_state) {
                     if (id != curr_state_->id) {
                         nb_loop_in_current_state_ = 0;
                         auto search = map_.find(id);
