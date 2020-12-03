@@ -41,6 +41,12 @@ public:
         return !(events_.find(e) == events_.end());
     }
 
+    void clear()
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        events_.clear();
+    }
+
 private:
     std::set<EventType>     events_;
     std::mutex              mutex_;
