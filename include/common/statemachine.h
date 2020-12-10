@@ -111,19 +111,20 @@ public:
             std::unique_lock<std::mutex> lk(mutex_);
             // execute each transition handler to check is a state change is required
             for (auto const& t: curr_state_->transitions) {
-                if (t.handler() == transition_status::goto_next_state &&
-                    t.next_state_id != curr_state_->id) {
-                    nb_loop_in_current_state_ = 0;
-                    auto search = map_.find(t.next_state_id);
-                    if (search == map_.end())
-                        throw error("next state not found");
-                    prev_state_ = curr_state_;
-                    curr_state_ = &(search->second);
-                    if (transition_handler_) {
-                        try {
-                            transition_handler_(prev_state_, curr_state_);
-                        } catch (...) {
-                            error("error during transition callback");
+                if (t.handler() == transition_status::goto_next_state) {
+                    if (t.next_state_id != curr_state_->id) {
+                        nb_loop_in_current_state_ = 0;
+                        auto search = map_.find(t.next_state_id);
+                        if (search == map_.end())
+                            throw error("next state not found");
+                        prev_state_ = curr_state_;
+                        curr_state_ = &(search->second);
+                        if (transition_handler_) {
+                            try {
+                                transition_handler_(prev_state_, curr_state_);
+                            } catch (...) {
+                                error("error during transition callback");
+                            }
                         }
                     }
                     break;
