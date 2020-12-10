@@ -29,6 +29,12 @@ public:
         cv_.wait(lk, [this, e]{return (events_.find(e) != events_.end());});
     }
 
+    std::cv_status wait_for(EventType e, std::chrono::milliseconds timeout)
+    {
+        std::unique_lock<std::mutex> lk(mutex_);
+        return cv_.wait(lk, timeout, [this, e]{return (events_.find(e) != events_.end());});
+    }
+
     bool erase(EventType e)
     {
         std::lock_guard<std::mutex> lk(mutex_);
