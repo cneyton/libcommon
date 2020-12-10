@@ -20,19 +20,19 @@ public:
     void wait()
     {
         std::unique_lock<std::mutex> lk(mutex_);
-        cv_.wait(lk, [this]{return !events_.empty();});
+        cv_.wait(lk, [&]{return !events_.empty();});
     }
 
     void wait(EventType e)
     {
         std::unique_lock<std::mutex> lk(mutex_);
-        cv_.wait(lk, [this, e]{return (events_.find(e) != events_.end());});
+        cv_.wait(lk, [&]{return (events_.find(e) != events_.end());});
     }
 
     std::cv_status wait_for(EventType e, std::chrono::milliseconds timeout)
     {
         std::unique_lock<std::mutex> lk(mutex_);
-        return cv_.wait(lk, timeout, [this, e]{return (events_.find(e) != events_.end());});
+        return cv_.wait(lk, timeout, [&]{return (events_.find(e) != events_.end());});
     }
 
     bool erase(EventType e)
