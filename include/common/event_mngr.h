@@ -35,7 +35,7 @@ public:
         return events_.erase(e);
     }
 
-    bool contain(EventType e)
+    bool contains(EventType e)
     {
         std::lock_guard<std::mutex> lk(mutex_);
         return !(events_.find(e) == events_.end());
