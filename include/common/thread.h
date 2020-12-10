@@ -49,23 +49,16 @@ public:
     virtual void run() = 0;
 
     virtual void stop()       {run_ = false;}
-
-    int get_thread_error()    {return run_error_;}
-
     virtual void join()       {thread_.join();}
-
-    virtual bool joinable()   {return thread_.joinable();}
-
     virtual void detach()     {thread_.detach();}
-
+    virtual bool joinable()   const {return thread_.joinable();}
     virtual bool is_running() const {return run_;}
 
 protected:
-    void notify_running(int error)
+    void notify_running()
     {
         std::lock_guard<std::mutex> lk(mutex_);
         started_ = true;
-        run_error_ = error;
         cond_.notify_all();
     }
 
@@ -75,7 +68,6 @@ private:
     std::mutex              mutex_;
     std::condition_variable cond_;
     bool                    started_;
-    int                     run_error_ = 0;
 };
 
 /**
