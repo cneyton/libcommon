@@ -3,6 +3,8 @@
 #include <mutex>
 #include <condition_variable>
 #include <set>
+#include <vector>
+#include <algorithm>
 
 namespace common {
 
@@ -27,6 +29,26 @@ public:
     {
         std::unique_lock<std::mutex> lk(mutex_);
         cv_.wait(lk, [&]{return (events_.find(e) != events_.end());});
+    }
+
+    void wait_any(std::vector<EventType> events)
+    {
+        std::unique_lock<std::mutex> lk(mutex_);
+        cv_.wait(lk, [&]
+            {
+                return std::any_of(events.cbegin(), events.cend(),
+                                   [&](EventType e){return (events_.find(e) != events_.end());});
+            });
+    }
+
+    void wait_all(std::vector<EventType> events)
+    {
+        std::unique_lock<std::mutex> lk(mutex_);
+        cv_.wait(lk, [&]
+            {
+                return std::all_of(events.cbegin(), events.cend(),
+                                   [&](EventType e){return (events_.find(e) != events_.end());});
+            });
     }
 
     std::cv_status wait_for(EventType e, std::chrono::milliseconds timeout)
